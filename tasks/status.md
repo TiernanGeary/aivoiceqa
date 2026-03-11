@@ -1,18 +1,18 @@
 # Build Status
 
-## Current Phase: Pre-build
-**Next action**: Build Phase 1 (Foundation)
+## Current Phase: Phase 2
+**Next action**: Spawn 4 parallel agents (A, B, C, D)
 
 ## Phase Status
 
-### Phase 1: Foundation — NOT STARTED
-- [ ] `pyproject.toml`
-- [ ] `config/settings.py`
-- [ ] `models/scenario.py`
-- [ ] `models/result.py`
-- [ ] `scenarios/example_scripted.yaml`
-- [ ] `.env.example`
-- **Test gate**: Models importable, scenario YAML loads, config loads
+### Phase 1: Foundation — COMPLETE
+- [x] `pyproject.toml`
+- [x] `config/settings.py`
+- [x] `models/scenario.py`
+- [x] `models/result.py`
+- [x] `scenarios/example_scripted.yaml`
+- [x] `.env.example`
+- **Test gate**: 13/13 passed
 - **User action**: Create `.env` from `.env.example` (just `RECO_MOCK_MODE=true` for mock)
 
 ### Phase 2: Core Components — NOT STARTED
@@ -39,8 +39,9 @@
 - **Test gate**: Full checklist in `qa-agent.md`
 
 ## Merge Log
-<!-- Record each merge with date and test gate result -->
-<!-- Example: 2026-03-10 | Phase 1 merged to main | pytest: 5/5 passed -->
+| Date | Phase | Test Gate |
+|------|-------|-----------|
+| 2026-03-10 | Phase 1 merged to main | pytest: 13/13 passed |
 
 ## Blockers
 <!-- Record any issues blocking progress -->
