@@ -1,7 +1,7 @@
 # Build Status
 
-## Current Phase: Phase 2
-**Next action**: Spawn 4 parallel agents (A, B, C, D)
+## Current Phase: Phase 3
+**Next action**: Spawn Agent E (Scenario Runner + CLI)
 
 ## Phase Status
 
@@ -15,12 +15,12 @@
 - **Test gate**: 13/13 passed
 - **User action**: Create `.env` from `.env.example` (just `RECO_MOCK_MODE=true` for mock)
 
-### Phase 2: Core Components — NOT STARTED
-- [ ] Agent A: reco-client (`reco/client.py`)
-- [ ] Agent B: twilio-receiver (`receivers/`, `server.py`)
-- [ ] Agent C: vad-engine (`core/vad.py`, `core/audio_utils.py`)
-- [ ] Agent D: audio-gen (`core/audio_gen.py`, `core/audio_cache.py`)
-- **Test gate**: All unit tests pass, interface smoke test, no import conflicts
+### Phase 2: Core Components — COMPLETE
+- [x] Agent A: reco-client (`reco/client.py`) — 17 tests
+- [x] Agent B: twilio-receiver (`receivers/`, `server.py`) — 27 tests
+- [x] Agent C: vad-engine (`core/vad.py`, `core/audio_utils.py`) — 25 tests
+- [x] Agent D: audio-gen (`core/audio_gen.py`, `core/audio_cache.py`) — 29 tests
+- **Test gate**: 111/111 passed, all components merged cleanly
 - **User action**: None for mock mode. For real calls: Twilio setup + ngrok
 
 ### Phase 3: Integration — NOT STARTED
@@ -42,6 +42,7 @@
 | Date | Phase | Test Gate |
 |------|-------|-----------|
 | 2026-03-10 | Phase 1 merged to main | pytest: 13/13 passed |
+| 2026-03-10 | Phase 2 merged to main (4 agents) | pytest: 111/111 passed |
 
 ## Blockers
 <!-- Record any issues blocking progress -->
