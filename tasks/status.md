@@ -34,9 +34,19 @@
 - **Test gate**: 213/213 passed
 - **User action**: `ANTHROPIC_API_KEY` needed for Tier 2 eval
 
-### Phase 5: QA & Verification — NOT STARTED
-- [ ] QA Agent: integration tests, full verification checklist
-- **Test gate**: Full checklist in `qa-agent.md`
+### Phase 5: QA & Verification — COMPLETE
+- [x] QA Agent: integration tests, full verification checklist — 29 tests
+- **Test gate**: 242/242 passed (213 existing + 29 integration)
+- **Verification checklist**:
+  - [x] `pytest tests/` — 242 passed
+  - [x] `python cli.py run --scenario scenarios/example_scripted.yaml --mock` — runs to completion
+  - [x] `python cli.py --help` — exits 0
+  - [x] Mock mode works with zero env vars
+  - [x] JSON report is valid and parseable
+  - [x] Console output is readable
+  - [x] No import errors between components
+  - [x] No circular dependencies
+  - [x] All component interfaces verified compatible
 
 ## Merge Log
 | Date | Phase | Test Gate |
