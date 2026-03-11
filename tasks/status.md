@@ -1,7 +1,7 @@
 # Build Status
 
-## Current Phase: Phase 3
-**Next action**: Spawn Agent E (Scenario Runner + CLI)
+## Current Phase: Phase 4
+**Next action**: Spawn Agents F + G (Evaluation + Reporting)
 
 ## Phase Status
 
@@ -23,9 +23,9 @@
 - **Test gate**: 111/111 passed, all components merged cleanly
 - **User action**: None for mock mode. For real calls: Twilio setup + ngrok
 
-### Phase 3: Integration — NOT STARTED
-- [ ] Agent E: scenario-runner (`core/scenario_runner.py`, `cli.py`)
-- **Test gate**: Mock pipeline e2e, `cli.py run --mock` works
+### Phase 3: Integration — COMPLETE
+- [x] Agent E: scenario-runner (`core/scenario_runner.py`, `cli.py`) — 18 tests
+- **Test gate**: 129/129 passed, CLI mock pipeline runs e2e
 - **User action**: None for mock mode
 
 ### Phase 4: Evaluation & Reporting — NOT STARTED
@@ -43,6 +43,7 @@
 |------|-------|-----------|
 | 2026-03-10 | Phase 1 merged to main | pytest: 13/13 passed |
 | 2026-03-10 | Phase 2 merged to main (4 agents) | pytest: 111/111 passed |
+| 2026-03-10 | Phase 3 merged to main | pytest: 129/129 passed + CLI smoke test |
 
 ## Blockers
 <!-- Record any issues blocking progress -->
