@@ -1,0 +1,46 @@
+scenario_id: booking_happy_path
+mode: scripted
+description: "予約のハッピーパス — basic booking flow"
+flow_path: flow/flow.yaml
+expected_turns:
+  min: 3
+  max: 8
+expected_duration:
+  min_seconds: 30
+  max_seconds: 180
+vad:
+  silence_threshold_ms: 1500
+
+steps:
+  - step: 1
+    # No user input — agent speaks first (outbound call greeting)
+    expected_block: greeting
+    checks:
+      factual: "Agent should greet and identify themselves"
+      keigo_level: teineigo
+
+  - step: 2
+    user_input: "はい、予約をお願いします"
+    expected_block: ask_date
+    checks:
+      factual: "Agent should ask for preferred date and time"
+      keigo_level: teineigo
+      must_contain_meaning:
+        - "日時"
+
+  - step: 3
+    user_input: "来週の火曜日、午後2時でお願いします"
+    expected_block: confirm_date
+    checks:
+      factual: "Agent should confirm next Tuesday at 2pm"
+      keigo_level: teineigo
+      must_contain_meaning:
+        - "火曜日"
+        - "午後2時"
+
+  - step: 4
+    user_input: "はい、それで大丈夫です"
+    expected_block: closing
+    checks:
+      factual: "Agent should confirm the booking and close the call politely"
+      keigo_level: teineigo

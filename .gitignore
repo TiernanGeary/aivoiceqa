@@ -4,3 +4,7 @@ __pycache__/
 .env
 cache/
 reports/*.json
+*.egg-info/
+dist/
+build/
+.pytest_cache/

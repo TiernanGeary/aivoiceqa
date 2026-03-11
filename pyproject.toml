@@ -1,0 +1,36 @@
+[project]
+name = "voiceaiqa"
+version = "0.1.0"
+description = "Automated QA tool for Japanese outbound voice agents"
+requires-python = ">=3.11"
+dependencies = [
+    "python-dotenv>=1.0.0",
+    "pyyaml>=6.0",
+    "httpx>=0.27.0",
+    "fastapi>=0.115.0",
+    "uvicorn>=0.32.0",
+    "websockets>=13.0",
+    "numpy>=1.26.0",
+]
+
+[project.optional-dependencies]
+twilio = ["twilio>=9.0.0"]
+eval = ["anthropic>=0.40.0"]
+audio = ["openai>=1.50.0", "soundfile>=0.12.0"]
+vad = ["torch>=2.0.0", "silero-vad>=5.0"]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+]
+all = ["voiceaiqa[twilio,eval,audio,vad,dev]"]
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.setuptools.packages.find]
+include = ["config*", "models*", "core*", "receivers*", "reco*"]
