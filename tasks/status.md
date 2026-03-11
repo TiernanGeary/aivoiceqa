@@ -1,7 +1,7 @@
 # Build Status
 
-## Current Phase: Phase 4
-**Next action**: Spawn Agents F + G (Evaluation + Reporting)
+## Current Phase: Phase 5
+**Next action**: Spawn QA Agent (integration testing + verification)
 
 ## Phase Status
 
@@ -28,10 +28,10 @@
 - **Test gate**: 129/129 passed, CLI mock pipeline runs e2e
 - **User action**: None for mock mode
 
-### Phase 4: Evaluation & Reporting — NOT STARTED
-- [ ] Agent F: evaluation (`core/evaluator.py`, `core/tier1_metrics.py`, `core/tier2_metrics.py`, `core/tier3_metrics.py`)
-- [ ] Agent G: reporting (`core/reporter.py`)
-- **Test gate**: Tier 1 eval works, JSON report valid, all prior tests pass
+### Phase 4: Evaluation & Reporting — COMPLETE
+- [x] Agent F: evaluation (`core/evaluator.py`, `core/tier1_metrics.py`, `core/tier2_metrics.py`, `core/tier3_metrics.py`) — 38 tests
+- [x] Agent G: reporting (`core/reporter.py`) — 46 tests
+- **Test gate**: 213/213 passed
 - **User action**: `ANTHROPIC_API_KEY` needed for Tier 2 eval
 
 ### Phase 5: QA & Verification — NOT STARTED
@@ -44,6 +44,7 @@
 | 2026-03-10 | Phase 1 merged to main | pytest: 13/13 passed |
 | 2026-03-10 | Phase 2 merged to main (4 agents) | pytest: 111/111 passed |
 | 2026-03-10 | Phase 3 merged to main | pytest: 129/129 passed + CLI smoke test |
+| 2026-03-10 | Phase 4 merged to main (2 agents) | pytest: 213/213 passed |
 
 ## Blockers
 <!-- Record any issues blocking progress -->
