@@ -1,0 +1,774 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>aivoiceqa</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { background:#0f1117; color:#e2e8f0; }
+    .card  { background:#1a1d27; border:1px solid #2d3148; }
+    .card2 { background:#141720; border:1px solid #252840; }
+    .inp   { background:#0d1117; border:1px solid #2d3148; color:#e2e8f0; border-radius:6px; padding:6px 10px; width:100%; font-size:13px; }
+    .inp:focus { outline:none; border-color:#6366f1; }
+    textarea.inp { resize:vertical; min-height:60px; }
+    select.inp { cursor:pointer; }
+    .btn-primary { background:#4f46e5; color:#fff; padding:6px 16px; border-radius:6px; font-size:13px; font-weight:600; cursor:pointer; transition:background .15s; }
+    .btn-primary:hover { background:#4338ca; }
+    .btn-primary:disabled { background:#374151; color:#6b7280; cursor:not-allowed; }
+    .btn-ghost { background:transparent; border:1px solid #374151; color:#94a3b8; padding:6px 14px; border-radius:6px; font-size:13px; cursor:pointer; transition:all .15s; }
+    .btn-ghost:hover { border-color:#6366f1; color:#e2e8f0; }
+    .btn-danger { background:transparent; border:1px solid #7f1d1d; color:#f87171; padding:4px 10px; border-radius:6px; font-size:12px; cursor:pointer; }
+    .btn-danger:hover { background:#7f1d1d33; }
+    .tag-scripted { background:#1e3a5f; color:#93c5fd; font-size:11px; padding:2px 7px; border-radius:4px; }
+    .tag-persona  { background:#3b1f5e; color:#c4b5fd; font-size:11px; padding:2px 7px; border-radius:4px; }
+    .status-pending { color:#94a3b8; }
+    .status-running { color:#fbbf24; }
+    .status-done    { color:#34d399; }
+    .status-error   { color:#f87171; }
+    .log-box { font-family:monospace; font-size:11px; background:#0d1117; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    .spin { display:inline-block; animation:spin .8s linear infinite; }
+    .divider { border-color:#2d3148; }
+    ::-webkit-scrollbar { width:6px; height:6px; }
+    ::-webkit-scrollbar-track { background:#0d1117; }
+    ::-webkit-scrollbar-thumb { background:#374151; border-radius:3px; }
+  </style>
+</head>
+<body class="h-screen flex flex-col overflow-hidden">
+
+<!-- Header -->
+<header class="flex items-center justify-between px-5 py-3 border-b border-slate-800 shrink-0">
+  <div class="flex items-center gap-3">
+    <h1 class="text-base font-bold text-white">aivoiceqa</h1>
+    <span class="text-slate-600 text-sm">|</span>
+    <span class="text-slate-400 text-sm">AI Voice Agent QA</span>
+  </div>
+  <div id="srv-status" class="text-xs text-slate-500"></div>
+</header>
+
+<!-- Body: 3 columns -->
+<div class="flex flex-1 overflow-hidden">
+
+  <!-- ── Left: Scenario list ─────────────────────────────────────────── -->
+  <aside class="w-64 shrink-0 border-r border-slate-800 flex flex-col overflow-hidden">
+    <div class="p-3 border-b border-slate-800 flex gap-2">
+      <button class="btn-primary flex-1" onclick="newScenario()">+ New</button>
+    </div>
+    <div id="scenario-list" class="flex-1 overflow-y-auto p-2 space-y-1.5">
+      <p class="text-slate-600 text-xs p-2">Loading…</p>
+    </div>
+  </aside>
+
+  <!-- ── Center: Scenario editor ──────────────────────────────────────── -->
+  <main id="editor-panel" class="flex-1 overflow-y-auto p-5">
+    <div id="empty-state" class="flex items-center justify-center h-full text-slate-600 text-sm">
+      Select a scenario or click + New
+    </div>
+    <div id="editor-form" class="hidden max-w-2xl mx-auto space-y-5">
+
+      <!-- Basic info -->
+      <div class="card rounded-xl p-4 space-y-3">
+        <h2 class="text-sm font-semibold text-slate-300">Scenario</h2>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="text-xs text-slate-400 block mb-1">Scenario ID *</label>
+            <input id="f-scenario_id" class="inp" placeholder="e.g. happy_path" />
+          </div>
+          <div>
+            <label class="text-xs text-slate-400 block mb-1">Mode</label>
+            <select id="f-mode" class="inp" onchange="toggleModeFields(this.value)">
+              <option value="scripted">scripted</option>
+              <option value="persona">persona</option>
+            </select>
+          </div>
+        </div>
+        <div>
+          <label class="text-xs text-slate-400 block mb-1">Description</label>
+          <input id="f-description" class="inp" placeholder="What this scenario tests" />
+        </div>
+        <div>
+          <label class="text-xs text-slate-400 block mb-1">Flow path (in realtime-tmp)</label>
+          <input id="f-flow_path" class="inp" placeholder="reco-rta/flow/flow.yaml" />
+        </div>
+      </div>
+
+      <!-- Call bounds -->
+      <div class="card rounded-xl p-4">
+        <h2 class="text-sm font-semibold text-slate-300 mb-3">Call Bounds</h2>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="text-xs text-slate-400 block mb-1">Min turns</label>
+            <input id="f-turns-min" type="number" class="inp" value="1" />
+          </div>
+          <div>
+            <label class="text-xs text-slate-400 block mb-1">Max turns</label>
+            <input id="f-turns-max" type="number" class="inp" value="20" />
+          </div>
+          <div>
+            <label class="text-xs text-slate-400 block mb-1">Min duration (s)</label>
+            <input id="f-dur-min" type="number" class="inp" value="10" />
+          </div>
+          <div>
+            <label class="text-xs text-slate-400 block mb-1">Max duration (s)</label>
+            <input id="f-dur-max" type="number" class="inp" value="300" />
+          </div>
+          <div>
+            <label class="text-xs text-slate-400 block mb-1">VAD silence (ms)</label>
+            <input id="f-vad" type="number" class="inp" value="800" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Steps (scripted only) -->
+      <div id="steps-section">
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-sm font-semibold text-slate-300">Steps</h2>
+          <button class="btn-ghost text-xs" onclick="addStep()">+ Add step</button>
+        </div>
+        <div id="steps-list" class="space-y-3"></div>
+        <button class="btn-ghost w-full mt-3 text-xs" onclick="addStep()">+ Add step</button>
+      </div>
+
+      <!-- Persona config (persona mode only) -->
+      <div id="persona-section" class="hidden space-y-4">
+        <div class="card rounded-xl p-4 space-y-3">
+          <h2 class="text-sm font-semibold text-slate-300">Persona</h2>
+          <p class="text-xs text-slate-500">Claude will play this character dynamically each turn, reacting to what the agent actually says.</p>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="text-xs text-slate-400 block mb-1">Name</label>
+              <input id="p-name" class="inp" placeholder="e.g. 田中部長" />
+            </div>
+            <div>
+              <label class="text-xs text-slate-400 block mb-1">Language / tone</label>
+              <input id="p-language" class="inp" placeholder="e.g. Japanese, teineigo" value="Japanese, polite business style (teineigo)" />
+            </div>
+          </div>
+          <div>
+            <label class="text-xs text-slate-400 block mb-1">Personality</label>
+            <textarea id="p-personality" class="inp" rows="3"
+              placeholder="e.g. 忙しい中小企業の部長。コスト意識が高く、新しいツールには慎重。ただし効率改善には前向き。"></textarea>
+          </div>
+          <div>
+            <label class="text-xs text-slate-400 block mb-1">Goal in this call</label>
+            <textarea id="p-goal" class="inp" rows="2"
+              placeholder="e.g. AIツール導入が自社のコスト削減につながるかを判断する"></textarea>
+          </div>
+          <div>
+            <label class="text-xs text-slate-400 block mb-1">
+              Objections
+              <span class="text-slate-600 font-normal ml-1">(one per line)</span>
+            </label>
+            <textarea id="p-objections" class="inp" rows="3"
+              placeholder="e.g. 今のスタッフで十分&#10;AIの電話は不自然"></textarea>
+          </div>
+        </div>
+
+        <div class="card rounded-xl p-4 space-y-3">
+          <h2 class="text-sm font-semibold text-slate-300">Evaluation</h2>
+          <div>
+            <label class="text-xs text-slate-400 block mb-1">Objective (what a successful call achieves)</label>
+            <textarea id="p-eval-objective" class="inp" rows="2"
+              placeholder="e.g. Reco successfully qualified the prospect and got agreement to a demo"></textarea>
+          </div>
+          <div>
+            <label class="text-xs text-slate-400 block mb-1">
+              Criteria
+              <span class="text-slate-600 font-normal ml-1">(one per line, for Claude to grade)</span>
+            </label>
+            <textarea id="p-eval-criteria" class="inp" rows="3"
+              placeholder="e.g. Did the agent handle objections convincingly?&#10;Was the agent's Japanese natural?"></textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div class="flex items-center gap-3 pb-8">
+        <button id="btn-save" class="btn-primary" onclick="saveScenario()">Save</button>
+        <button id="btn-run"  class="btn-primary" style="background:#059669" onclick="runScenario()" disabled>
+          ▶ Run
+        </button>
+        <button class="btn-ghost" onclick="cancelEdit()">Cancel</button>
+        <button id="btn-delete" class="btn-danger ml-auto hidden" onclick="deleteScenario()">Delete</button>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- ── Right: Run output ─────────────────────────────────────────────── -->
+  <aside class="w-96 shrink-0 border-l border-slate-800 flex flex-col overflow-hidden">
+    <div class="p-3 border-b border-slate-800 flex items-center justify-between">
+      <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Run Output</span>
+      <span id="run-badge" class="text-xs font-mono text-slate-600"></span>
+    </div>
+
+    <!-- Active run -->
+    <div id="run-active" class="hidden border-b border-slate-800 p-3">
+      <div class="flex items-center justify-between mb-2">
+        <span id="run-scenario-name" class="text-xs font-medium text-slate-300"></span>
+        <span id="run-status-badge" class="text-xs font-mono"></span>
+      </div>
+      <div id="run-log" class="log-box card rounded p-2 h-40 overflow-y-auto text-slate-400 space-y-0.5"></div>
+    </div>
+
+    <!-- Result -->
+    <div id="run-result" class="hidden flex-1 overflow-y-auto p-3 space-y-3"></div>
+
+    <!-- History -->
+    <div class="flex-1 overflow-y-auto" id="run-history-wrap">
+      <div class="p-3 border-b border-slate-800">
+        <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">History</span>
+      </div>
+      <div id="run-history" class="p-2 space-y-1.5">
+        <p class="text-xs text-slate-600 p-2">No runs yet.</p>
+      </div>
+    </div>
+  </aside>
+
+</div>
+
+<script>
+// ── State ────────────────────────────────────────────────────────────────────
+let scenarios = [];
+let currentFile = null;   // null = new scenario
+let activeRunId = null;
+let pollTimer   = null;
+let stepCount   = 0;
+
+// ── Boot ─────────────────────────────────────────────────────────────────────
+async function init() {
+  await Promise.all([loadServerStatus(), loadScenarios(), loadHistory()]);
+}
+
+// ── Server status ─────────────────────────────────────────────────────────────
+async function loadServerStatus() {
+  try {
+    const s = await api('GET', '/api/status');
+    const el = document.getElementById('srv-status');
+    el.innerHTML = s.twilio_webhook
+      ? `<span class="text-green-500">●</span> ${s.twilio_webhook}`
+      : `<span class="text-yellow-500">●</span> QA_PUBLIC_URL not set`;
+  } catch(e) {}
+}
+
+// ── Scenarios list ────────────────────────────────────────────────────────────
+async function loadScenarios() {
+  scenarios = await api('GET', '/api/scenarios');
+  const el = document.getElementById('scenario-list');
+  if (!scenarios.length) {
+    el.innerHTML = '<p class="text-xs text-slate-600 p-2">No scenarios yet.</p>';
+    return;
+  }
+  el.innerHTML = scenarios.map(s => `
+    <div class="card rounded-lg p-2.5 cursor-pointer hover:border-indigo-600 transition-colors scenario-item"
+         data-file="${s.file}" onclick="loadScenario('${s.file}')">
+      <div class="flex items-start justify-between gap-1 mb-1">
+        <span class="text-xs font-medium text-white leading-tight">${s.scenario_id}</span>
+        <span class="tag-${s.mode} shrink-0">${s.mode}</span>
+      </div>
+      ${s.description ? `<p class="text-xs text-slate-500 leading-snug mb-1">${esc(s.description)}</p>` : ''}
+      <span class="text-xs text-slate-600">${s.steps} step${s.steps!==1?'s':''}</span>
+    </div>`).join('');
+}
+
+function highlightScenario(file) {
+  document.querySelectorAll('.scenario-item').forEach(el => {
+    el.classList.toggle('border-indigo-500', el.dataset.file === file);
+  });
+}
+
+// ── Load scenario into editor ─────────────────────────────────────────────────
+async function loadScenario(file) {
+  const data = await api('GET', `/api/scenarios/${file}`);
+  currentFile = file;
+  highlightScenario(file);
+  populateForm(data);
+  document.getElementById('btn-delete').classList.remove('hidden');
+  document.getElementById('btn-run').disabled = false;
+  showForm();
+}
+
+function populateForm(data) {
+  document.getElementById('f-scenario_id').value  = data.scenario_id || '';
+  document.getElementById('f-mode').value          = data.mode || 'scripted';
+  document.getElementById('f-description').value   = data.description || '';
+  document.getElementById('f-flow_path').value     = data.flow_path || 'reco-rta/flow/flow.yaml';
+  document.getElementById('f-turns-min').value     = data.expected_turns?.min ?? 1;
+  document.getElementById('f-turns-max').value     = data.expected_turns?.max ?? 20;
+  document.getElementById('f-dur-min').value       = data.expected_duration?.min_seconds ?? 10;
+  document.getElementById('f-dur-max').value       = data.expected_duration?.max_seconds ?? 300;
+  document.getElementById('f-vad').value           = data.vad?.silence_threshold_ms ?? 1500;
+
+  const list = document.getElementById('steps-list');
+  list.innerHTML = '';
+  stepCount = 0;
+  (data.steps || []).forEach(s => appendStep(s));
+
+  // Persona fields
+  const p = data.persona || {};
+  document.getElementById('p-name').value          = p.name || '';
+  document.getElementById('p-personality').value   = p.personality || '';
+  document.getElementById('p-goal').value          = p.goal || '';
+  document.getElementById('p-language').value      = p.language || 'Japanese, polite business style (teineigo)';
+  document.getElementById('p-objections').value    = (p.objections || []).join('\n');
+  const ev = data.evaluation || {};
+  document.getElementById('p-eval-objective').value = ev.objective || '';
+  document.getElementById('p-eval-criteria').value  = (ev.criteria || []).join('\n');
+
+  toggleModeFields(data.mode || 'scripted');
+}
+
+function toggleModeFields(mode) {
+  const isPersona = mode === 'persona';
+  document.getElementById('steps-section').classList.toggle('hidden', isPersona);
+  document.getElementById('persona-section').classList.toggle('hidden', !isPersona);
+}
+
+function showForm() {
+  document.getElementById('empty-state').classList.add('hidden');
+  document.getElementById('editor-form').classList.remove('hidden');
+}
+
+// ── New scenario ──────────────────────────────────────────────────────────────
+function newScenario() {
+  currentFile = null;
+  highlightScenario(null);
+  populateForm({
+    scenario_id: '', mode: 'scripted', description: '', flow_path: 'reco-rta/flow/flow.yaml',
+    expected_turns: {min:1,max:20}, expected_duration:{min_seconds:10,max_seconds:300},
+    vad: {silence_threshold_ms:1500}, steps: []
+  });
+  document.getElementById('btn-delete').classList.add('hidden');
+  document.getElementById('btn-run').disabled = true;
+  showForm();
+  document.getElementById('f-scenario_id').focus();
+}
+
+function cancelEdit() {
+  document.getElementById('editor-form').classList.add('hidden');
+  document.getElementById('empty-state').classList.remove('hidden');
+  highlightScenario(null);
+  currentFile = null;
+}
+
+// ── Steps ──────────────────────────────────────────────────────────────────────
+function appendStep(data = {}) {
+  stepCount++;
+  const n = stepCount;
+  const checks = data.checks || {};
+  const meanings = (checks.must_contain_meaning || []).join('\n');
+
+  const div = document.createElement('div');
+  div.className = 'card2 rounded-xl p-3 step-card';
+  div.dataset.step = n;
+  div.innerHTML = `
+    <div class="flex items-center justify-between mb-3">
+      <div class="flex items-center gap-2">
+        <span class="w-6 h-6 rounded-full bg-indigo-900 text-indigo-300 text-xs flex items-center justify-center font-bold step-num">${n}</span>
+        <span class="text-xs text-slate-400">Step ${n}</span>
+      </div>
+      <div class="flex gap-1">
+        <button class="btn-ghost text-xs px-2 py-1" onclick="moveStep(${n},-1)" title="Move up">↑</button>
+        <button class="btn-ghost text-xs px-2 py-1" onclick="moveStep(${n},1)" title="Move down">↓</button>
+        <button class="btn-danger text-xs" onclick="removeStep(${n})">✕</button>
+      </div>
+    </div>
+
+    <div class="space-y-2.5">
+      <div>
+        <label class="text-xs text-slate-400 block mb-1">
+          User says
+          <span class="text-slate-600 font-normal ml-1">(leave blank if agent speaks first)</span>
+        </label>
+        <textarea class="inp step-user-input" rows="2"
+          placeholder="e.g. はい、お願いします">${esc(data.user_input||'')}</textarea>
+      </div>
+      <div>
+        <label class="text-xs text-slate-400 block mb-1">Expected flow block ID</label>
+        <input class="inp step-expected-block" placeholder="e.g. intro"
+               value="${esc(data.expected_block||'')}" />
+      </div>
+
+      <details class="group">
+        <summary class="text-xs text-slate-500 cursor-pointer hover:text-slate-300 select-none list-none flex items-center gap-1">
+          <span class="group-open:rotate-90 transition-transform inline-block">▶</span>
+          Evaluation checks
+        </summary>
+        <div class="mt-2.5 space-y-2 pl-3 border-l border-slate-700">
+          <div>
+            <label class="text-xs text-slate-400 block mb-1">Factual check prompt (for Claude)</label>
+            <textarea class="inp step-factual" rows="2"
+              placeholder="e.g. Agent should greet and introduce themselves">${esc(checks.factual||'')}</textarea>
+          </div>
+          <div>
+            <label class="text-xs text-slate-400 block mb-1">Keigo level</label>
+            <select class="inp step-keigo">
+              <option value="">— none —</option>
+              <option value="teineigo"  ${checks.keigo_level==='teineigo' ?'selected':''}>teineigo (丁寧語)</option>
+              <option value="sonkeigo"  ${checks.keigo_level==='sonkeigo' ?'selected':''}>sonkeigo (尊敬語)</option>
+              <option value="kenjougo"  ${checks.keigo_level==='kenjougo' ?'selected':''}>kenjougo (謙譲語)</option>
+            </select>
+          </div>
+          <div>
+            <label class="text-xs text-slate-400 block mb-1">
+              Must contain meaning
+              <span class="text-slate-600 font-normal ml-1">(one phrase per line)</span>
+            </label>
+            <textarea class="inp step-meanings" rows="2"
+              placeholder="e.g. 担当者&#10;お名前">${esc(meanings)}</textarea>
+          </div>
+        </div>
+      </details>
+    </div>`;
+
+  document.getElementById('steps-list').appendChild(div);
+  renumberSteps();
+}
+
+function addStep() {
+  appendStep({});
+}
+
+function removeStep(n) {
+  const el = document.querySelector(`.step-card[data-step="${n}"]`);
+  if (el) el.remove();
+  renumberSteps();
+}
+
+function moveStep(n, dir) {
+  const list = document.getElementById('steps-list');
+  const el = document.querySelector(`.step-card[data-step="${n}"]`);
+  if (!el) return;
+  if (dir === -1 && el.previousElementSibling) {
+    list.insertBefore(el, el.previousElementSibling);
+  } else if (dir === 1 && el.nextElementSibling) {
+    list.insertBefore(el.nextElementSibling, el);
+  }
+  renumberSteps();
+}
+
+function renumberSteps() {
+  document.querySelectorAll('.step-card').forEach((el, i) => {
+    const num = i + 1;
+    el.dataset.step = num;
+    el.querySelector('.step-num').textContent = num;
+    el.querySelectorAll('[onclick]').forEach(btn => {
+      btn.setAttribute('onclick', btn.getAttribute('onclick').replace(/\d+/, num));
+    });
+  });
+  stepCount = document.querySelectorAll('.step-card').length;
+}
+
+// ── Collect form ──────────────────────────────────────────────────────────────
+function collectForm() {
+  const steps = [];
+  document.querySelectorAll('.step-card').forEach((el, i) => {
+    const meanings = (el.querySelector('.step-meanings').value || '')
+      .split('\n').map(s=>s.trim()).filter(Boolean);
+    const checks = {};
+    const factual = el.querySelector('.step-factual').value.trim();
+    const keigo   = el.querySelector('.step-keigo').value;
+    if (factual) checks.factual = factual;
+    if (keigo)   checks.keigo_level = keigo;
+    if (meanings.length) checks.must_contain_meaning = meanings;
+    steps.push({
+      step: i + 1,
+      user_input: el.querySelector('.step-user-input').value.trim() || null,
+      expected_block: el.querySelector('.step-expected-block').value.trim() || null,
+      checks,
+    });
+  });
+
+  const mode = document.getElementById('f-mode').value;
+
+  const base = {
+    scenario_id:  document.getElementById('f-scenario_id').value.trim(),
+    mode,
+    description:  document.getElementById('f-description').value.trim(),
+    flow_path:    document.getElementById('f-flow_path').value.trim() || 'reco-rta/flow/flow.yaml',
+    expected_turns: {
+      min: parseInt(document.getElementById('f-turns-min').value) || 1,
+      max: parseInt(document.getElementById('f-turns-max').value) || 20,
+    },
+    expected_duration: {
+      min_seconds: parseInt(document.getElementById('f-dur-min').value) || 10,
+      max_seconds: parseInt(document.getElementById('f-dur-max').value) || 300,
+    },
+    vad: { silence_threshold_ms: parseInt(document.getElementById('f-vad').value) || 1500 },
+  };
+
+  if (mode === 'persona') {
+    const objections = (document.getElementById('p-objections').value || '')
+      .split('\n').map(s => s.trim()).filter(Boolean);
+    const criteria = (document.getElementById('p-eval-criteria').value || '')
+      .split('\n').map(s => s.trim()).filter(Boolean);
+    base.persona = {
+      name:        document.getElementById('p-name').value.trim(),
+      personality: document.getElementById('p-personality').value.trim(),
+      goal:        document.getElementById('p-goal').value.trim(),
+      language:    document.getElementById('p-language').value.trim(),
+      objections,
+    };
+    base.evaluation = {
+      objective: document.getElementById('p-eval-objective').value.trim(),
+      criteria,
+    };
+  } else {
+    base.steps = steps;
+  }
+
+  return base;
+}
+
+// ── Save ──────────────────────────────────────────────────────────────────────
+async function saveScenario() {
+  const data = collectForm();
+  if (!data.scenario_id) { flash('Scenario ID is required'); return; }
+
+  const btn = document.getElementById('btn-save');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    if (currentFile) {
+      await api('PUT', `/api/scenarios/${currentFile}`, data);
+    } else {
+      const res = await api('POST', '/api/scenarios', data);
+      currentFile = res.file;
+    }
+    await loadScenarios();
+    highlightScenario(currentFile);
+    document.getElementById('btn-run').disabled = false;
+    document.getElementById('btn-delete').classList.remove('hidden');
+    btn.textContent = '✓ Saved';
+    setTimeout(() => { btn.textContent = 'Save'; btn.disabled = false; }, 1500);
+  } catch(e) {
+    flash(e.message || 'Save failed');
+    btn.textContent = 'Save'; btn.disabled = false;
+  }
+}
+
+// ── Delete ────────────────────────────────────────────────────────────────────
+async function deleteScenario() {
+  if (!currentFile) return;
+  if (!confirm(`Delete ${currentFile}?`)) return;
+  await api('DELETE', `/api/scenarios/${currentFile}`);
+  currentFile = null;
+  cancelEdit();
+  await loadScenarios();
+}
+
+// ── Run ───────────────────────────────────────────────────────────────────────
+async function runScenario() {
+  if (!currentFile) { flash('Save the scenario first'); return; }
+  if (activeRunId) { flash('A run is already in progress'); return; }
+
+  // Save first to pick up any unsaved changes
+  const data = collectForm();
+  try { await api('PUT', `/api/scenarios/${currentFile}`, data); } catch(e) {}
+
+  const btn = document.getElementById('btn-run');
+  btn.disabled = true; btn.innerHTML = '<span class="spin">◉</span> Running…';
+
+  try {
+    const run = await api('POST', '/api/runs', { scenario_file: currentFile });
+    activeRunId = run.run_id;
+    showRunActive(run);
+    pollTimer = setInterval(() => pollRun(run.run_id), 800);
+  } catch(e) {
+    flash(e.message || 'Failed to start run');
+    btn.disabled = false; btn.innerHTML = '▶ Run';
+  }
+}
+
+function showRunActive(run) {
+  document.getElementById('run-result').classList.add('hidden');
+  const el = document.getElementById('run-active');
+  el.classList.remove('hidden');
+  document.getElementById('run-scenario-name').textContent = run.scenario_id;
+  document.getElementById('run-log').innerHTML = '';
+  setRunBadge(run.status);
+}
+
+async function pollRun(id) {
+  try {
+    const run = await api('GET', `/api/runs/${id}`);
+    setRunBadge(run.status);
+
+    const logEl = document.getElementById('run-log');
+    logEl.innerHTML = run.logs.map(l => `<div class="py-px">${esc(l)}</div>`).join('');
+    logEl.scrollTop = logEl.scrollHeight;
+
+    if (run.status === 'done' || run.status === 'error') {
+      clearInterval(pollTimer); pollTimer = null; activeRunId = null;
+      const btn = document.getElementById('btn-run');
+      btn.disabled = false; btn.innerHTML = '▶ Run';
+
+      if (run.result) {
+        const el = document.getElementById('run-result');
+        el.innerHTML = renderResult(run.result);
+        el.classList.remove('hidden');
+      }
+      await loadHistory();
+    }
+  } catch(e) {}
+}
+
+function setRunBadge(status) {
+  const el = document.getElementById('run-status-badge');
+  const map = { pending:'○ pending', running:'◉ running', done:'✓ done', error:'✗ error' };
+  el.className = `text-xs font-mono status-${status}`;
+  el.textContent = map[status] || status;
+  document.getElementById('run-badge').textContent =
+    status === 'running' ? '● live' : '';
+}
+
+// ── Result render ──────────────────────────────────────────────────────────────
+function renderResult(r) {
+  if (!r) return '';
+  const oc = r.overall_passed===true?'text-green-400':r.overall_passed===false?'text-red-400':'text-slate-400';
+  const ot = r.overall_passed===true?'PASSED':r.overall_passed===false?'FAILED':'COMPLETE';
+
+  // Conversation view — shows both agent and persona/user turns
+  const hasConversation = r.steps.some(s => s.agent_response || s.user_input);
+  const conversationHtml = hasConversation ? r.steps.map(s => {
+    const agentBubble = s.agent_response
+      ? `<div class="mb-1.5">
+           <div class="text-xs text-indigo-400 font-medium mb-0.5">Agent${s.latency_ms!=null?' <span class="text-slate-600 font-normal">(responded in '+s.latency_ms+'ms)</span>':''}</div>
+           <div class="bg-indigo-950/60 border border-indigo-900/50 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 leading-relaxed">${esc(s.agent_response)}</div>
+         </div>`
+      : '';
+    const userBubble = s.user_input
+      ? `<div class="mb-2">
+           <div class="text-xs text-emerald-400 font-medium mb-0.5 text-right">You (turn ${s.step_number})</div>
+           <div class="bg-emerald-950/60 border border-emerald-900/50 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 leading-relaxed text-right">${esc(s.user_input)}</div>
+         </div>`
+      : '';
+    return agentBubble + userBubble;
+  }).join('') : '';
+
+  const stepsHtml = r.steps.map(s => {
+    const ic = s.error?'text-red-400':s.passed===true?'text-green-400':'text-slate-500';
+    const sym = s.error?'✗':s.passed===true?'✓':'○';
+    return `<tr class="border-t border-slate-800 text-xs">
+      <td class="px-2 py-1.5 text-slate-500">${s.step_number}</td>
+      <td class="px-2 py-1.5 ${ic} font-bold">${sym}</td>
+      <td class="px-2 py-1.5 text-slate-400 max-w-[80px] truncate" title="${esc(s.expected_block||'')}">${esc(s.expected_block||'—')}</td>
+      <td class="px-2 py-1.5 text-slate-500">${s.agent_audio_duration_ms?Math.round(s.agent_audio_duration_ms/1000*10)/10+'s':'—'}</td>
+      <td class="px-2 py-1.5 text-slate-500">${s.latency_ms!=null?s.latency_ms+'ms':'—'}</td>
+      ${s.error?`<td class="px-2 py-1.5 text-red-400 text-xs">${esc(s.error)}</td>`:'<td></td>'}
+    </tr>`;
+  }).join('');
+
+  const recordingHtml = r.recording_url ? `
+    <div class="card rounded-lg p-3 mb-3">
+      <div class="text-xs text-slate-400 mb-2 font-medium">Call Recording</div>
+      <audio controls class="w-full" style="height:32px;filter:invert(1) hue-rotate(180deg)">
+        <source src="${esc(r.recording_url)}" />
+        <a href="${esc(r.recording_url)}" class="text-indigo-400 text-xs" target="_blank">Download recording</a>
+      </audio>
+    </div>` : '';
+
+  return `
+    <div class="card rounded-lg p-3 mb-3">
+      <div class="flex justify-between items-center mb-2">
+        <span class="text-xs font-semibold text-white">${esc(r.scenario_id)}</span>
+        <span class="text-xs font-bold ${oc}">${ot}</span>
+      </div>
+      <div class="grid grid-cols-3 gap-2 text-xs">
+        <div><div class="text-slate-500">Duration</div><div class="text-white">${r.duration_s}s</div></div>
+        <div><div class="text-slate-500">P50 latency</div><div class="text-white">${r.latency_p50_ms!=null?r.latency_p50_ms+'ms':'—'}</div></div>
+        <div><div class="text-slate-500">P95 latency</div><div class="text-white">${r.latency_p95_ms!=null?r.latency_p95_ms+'ms':'—'}</div></div>
+      </div>
+      ${r.error?`<div class="mt-2 text-red-400 text-xs">⚠ ${esc(r.error)}</div>`:''}
+    </div>
+    ${recordingHtml}
+    ${hasConversation ? `
+    <details class="mb-3" open>
+      <summary class="text-xs text-slate-400 cursor-pointer hover:text-slate-200 mb-2 font-medium select-none px-1">Conversation</summary>
+      <div class="card rounded-lg p-3 space-y-0.5">${conversationHtml}</div>
+    </details>` : ''}
+    <details class="mb-3">
+      <summary class="text-xs text-slate-500 cursor-pointer hover:text-slate-300 mb-2 select-none px-1">Step details</summary>
+      <div class="card rounded-lg overflow-hidden">
+        <table class="w-full">
+          <thead><tr class="bg-slate-800/60 text-slate-500 text-xs">
+            <th class="px-2 py-1.5 text-left">#</th>
+            <th class="px-2 py-1.5 text-left">Pass</th>
+            <th class="px-2 py-1.5 text-left">Block</th>
+            <th class="px-2 py-1.5 text-left">Dur</th>
+            <th class="px-2 py-1.5 text-left">Latency</th>
+            <th class="px-2 py-1.5 text-left">Error</th>
+          </tr></thead>
+          <tbody>${stepsHtml}</tbody>
+        </table>
+      </div>
+    </details>
+    ${r.transcript ? `
+    <details class="text-xs">
+      <summary class="text-slate-500 cursor-pointer hover:text-slate-300 mb-1 select-none px-1">Reco transcript</summary>
+      <pre class="log-box card rounded p-2 text-slate-300 whitespace-pre-wrap overflow-auto max-h-48 mt-1">${esc(r.transcript)}</pre>
+    </details>` : ''}`;
+}
+
+// ── History ───────────────────────────────────────────────────────────────────
+async function loadHistory() {
+  const runs = await api('GET', '/api/runs');
+  const past = runs.filter(r => r.status==='done'||r.status==='error');
+  const el = document.getElementById('run-history');
+  if (!past.length) {
+    el.innerHTML = '<p class="text-xs text-slate-600 p-2">No runs yet.</p>';
+    return;
+  }
+  el.innerHTML = past.slice(0,20).map(r => {
+    const ic = r.status==='done'?'text-green-400':'text-red-400';
+    const pb = r.result?.overall_passed===true
+      ? '<span class="text-green-400 ml-1">PASS</span>'
+      : r.result?.overall_passed===false
+      ? '<span class="text-red-400 ml-1">FAIL</span>' : '';
+    return `<div class="card rounded-lg px-2.5 py-2 cursor-pointer hover:border-slate-500 transition-colors"
+                 onclick='showHistoryRun(${JSON.stringify(r).replace(/'/g,"&#39;")})'>
+      <div class="flex justify-between items-center text-xs">
+        <span class="text-slate-300">${esc(r.scenario_id)}${pb}</span>
+        <span class="${ic} font-mono">${r.status==='done'?'✓':'✗'} ${r.duration_s||'—'}s</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function showHistoryRun(run) {
+  const el = document.getElementById('run-result');
+  el.innerHTML = run.result ? renderResult(run.result) : `<pre class="log-box card rounded p-2 text-xs text-slate-300 overflow-auto max-h-64">${esc(run.logs.join('\n'))}</pre>`;
+  el.classList.remove('hidden');
+  document.getElementById('run-active').classList.add('hidden');
+}
+
+// ── Utils ──────────────────────────────────────────────────────────────────────
+async function api(method, path, body) {
+  const opts = { method, headers: {} };
+  if (body) { opts.headers['Content-Type']='application/json'; opts.body=JSON.stringify(body); }
+  const r = await fetch(path, opts);
+  if (!r.ok) {
+    const d = await r.json().catch(()=>({}));
+    throw new Error(d.detail || `HTTP ${r.status}`);
+  }
+  return r.json();
+}
+
+function esc(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function flash(msg) {
+  const d = document.createElement('div');
+  d.className='fixed bottom-4 right-4 bg-red-900 border border-red-700 text-red-200 text-sm px-4 py-2 rounded-lg z-50';
+  d.textContent = msg;
+  document.body.appendChild(d);
+  setTimeout(()=>d.remove(), 3000);
+}
+
+init();
+setInterval(loadServerStatus, 15000);
+</script>
+</body>
+</html>

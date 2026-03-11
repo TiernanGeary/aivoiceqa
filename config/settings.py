@@ -34,6 +34,9 @@ RECO_MOCK_MODE: bool = _bool(os.getenv("RECO_MOCK_MODE"), default=False)
 # --- Reco connection ---
 RECO_API_URL: str = os.getenv("RECO_API_URL", "http://localhost:3010")
 RECO_API_TOKEN: str = os.getenv("RECO_API_TOKEN", "")
+# Username/password login (preferred over static token — auto-obtains JWT)
+RECO_API_USERNAME: str = os.getenv("RECO_API_USERNAME", "")
+RECO_API_PASSWORD: str = os.getenv("RECO_API_PASSWORD", "")
 
 # --- Twilio ---
 TWILIO_ACCOUNT_SID: str = os.getenv("TWILIO_ACCOUNT_SID", "")
@@ -60,3 +63,9 @@ CALL_WAIT_TIMEOUT: float = _float(os.getenv("CALL_WAIT_TIMEOUT"), default=30.0)
 
 # --- Report output ---
 REPORT_OUTPUT_DIR: str = os.getenv("REPORT_OUTPUT_DIR", "reports")
+
+# --- Public URL for Twilio webhook ---
+# The public HTTPS hostname of this QA server (e.g. from ngrok).
+# Used to build TwiML that connects Twilio to our /media-stream WebSocket.
+# Example: "abc123.ngrok-free.app" or "qa.example.com"
+QA_PUBLIC_URL: str = os.getenv("QA_PUBLIC_URL", "")

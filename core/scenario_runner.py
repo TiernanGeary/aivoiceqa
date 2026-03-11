@@ -68,16 +68,24 @@ class ScenarioRunner:
         )
 
         try:
-            # 1. Pre-generate audio for all steps
-            logger.info("Pre-generating audio for scenario %s", scenario.scenario_id)
-            prepared_audio_list = await self.audio_generator.prepare_scenario_audio(scenario)
+            is_persona = scenario.mode == "persona"
 
-            # Build a mapping: step_number -> PreparedAudio
-            audio_by_step: dict[int, PreparedAudio] = {
-                pa.step: pa for pa in prepared_audio_list
-            }
+            if not is_persona:
+                # 1a. Scripted: pre-generate all audio up front
+                logger.info("Pre-generating audio for scenario %s", scenario.scenario_id)
+                prepared_audio_list = await self.audio_generator.prepare_scenario_audio(scenario)
+                audio_by_step: dict[int, PreparedAudio] = {
+                    pa.step: pa for pa in prepared_audio_list
+                }
+            else:
+                audio_by_step = {}
+                if not scenario.persona:
+                    result.error = "Persona mode requires a 'persona' config in the scenario"
+                    result.duration_s = time.monotonic() - start_time
+                    return result
+                logger.info("Persona mode: %s", scenario.persona.get("name", "unnamed"))
 
-            # 2. Register pending test (if receiver supports it)
+            # 2. Register pending test
             if hasattr(self.receiver, "register_pending_test"):
                 self.receiver.register_pending_test(
                     phone_number=settings.TWILIO_PHONE_NUMBER or "+10000000000",
@@ -88,9 +96,9 @@ class ScenarioRunner:
             logger.info("Triggering outbound call for scenario %s", scenario.scenario_id)
             call_start = await self.reco_client.start_call(
                 phone=settings.TWILIO_PHONE_NUMBER or "+10000000000",
-                customer_id="qa-test",
                 flow_path=scenario.flow_path or "flow/flow.yaml",
-                metadata={"qa_scenario": scenario.scenario_id},
+                metadata={"qa_scenario": scenario.scenario_id, "source": "aivoiceqa",
+                          "mode": scenario.mode},
             )
             result.call_id = call_start.call_id
             result.conversation_id = call_start.conversation_id
@@ -99,42 +107,45 @@ class ScenarioRunner:
             logger.info("Waiting for call to arrive (timeout=%ss)", self.call_wait_timeout)
             try:
                 call = await self.receiver.wait_for_call(timeout=self.call_wait_timeout)
-            except (TimeoutError, asyncio.TimeoutError) as e:
+            except (TimeoutError, asyncio.TimeoutError):
                 result.error = f"Call timeout: no call arrived within {self.call_wait_timeout}s"
                 result.duration_s = time.monotonic() - start_time
                 logger.error(result.error)
                 return result
 
-            # 5. Run each step
-            logger.info("Call connected, running %d steps", len(scenario.steps))
-            for step in scenario.steps:
-                prepared = audio_by_step.get(step.step)
-                try:
-                    step_result = await asyncio.wait_for(
-                        self._run_step(step, prepared, call),
-                        timeout=self.step_timeout,
-                    )
-                except asyncio.TimeoutError:
-                    step_result = StepResult(
-                        step_number=step.step,
-                        expected_block=step.expected_block,
-                        error=f"Step timeout after {self.step_timeout}s",
-                    )
-                    logger.warning("Step %d timed out", step.step)
-                except Exception as e:
-                    step_result = StepResult(
-                        step_number=step.step,
-                        expected_block=step.expected_block,
-                        error=f"Step error: {e}",
-                    )
-                    logger.error("Step %d error: %s", step.step, e)
+            # 5. Run steps — scripted or persona
+            if is_persona:
+                logger.info("Call connected, running persona conversation")
+                result.steps = await self._run_persona(scenario, call)
+            else:
+                logger.info("Call connected, running %d scripted steps", len(scenario.steps))
+                for step in scenario.steps:
+                    prepared = audio_by_step.get(step.step)
+                    try:
+                        step_result = await asyncio.wait_for(
+                            self._run_step(step, prepared, call),
+                            timeout=self.step_timeout,
+                        )
+                    except asyncio.TimeoutError:
+                        step_result = StepResult(
+                            step_number=step.step,
+                            expected_block=step.expected_block,
+                            error=f"Step timeout after {self.step_timeout}s",
+                        )
+                        logger.warning("Step %d timed out", step.step)
+                    except Exception as e:
+                        step_result = StepResult(
+                            step_number=step.step,
+                            expected_block=step.expected_block,
+                            error=f"Step error: {e}",
+                        )
+                        logger.error("Step %d error: %s", step.step, e)
 
-                result.steps.append(step_result)
+                    result.steps.append(step_result)
 
-                # If we got a disconnect error, stop running steps
-                if step_result.error and "disconnect" in step_result.error.lower():
-                    result.error = "Call disconnected during scenario"
-                    break
+                    if step_result.error and "disconnect" in step_result.error.lower():
+                        result.error = "Call disconnected during scenario"
+                        break
 
             # 6. Hang up
             logger.info("Hanging up call")
@@ -174,6 +185,93 @@ class ScenarioRunner:
 
         result.duration_s = time.monotonic() - start_time
         return result
+
+    async def _run_persona(
+        self, scenario, call: ActiveCall
+    ) -> list[StepResult]:
+        """Run a persona-mode conversation: LLM generates responses each turn.
+
+        Flow per turn:
+          1. Wait for agent to finish speaking
+          2. Transcribe agent audio → Whisper (gives Claude context)
+          3. Generate persona response → Claude (in-character)
+          4. Convert response → TTS audio → play back
+          5. Repeat until [END] or max_turns reached
+        """
+        from config import settings
+        from core.persona_runner import generate_response, transcribe_mulaw
+
+        persona = scenario.persona or {}
+        max_turns = scenario.expected_turns.max
+        history: list[dict] = []
+        steps: list[StepResult] = []
+
+        for turn in range(1, max_turns + 1):
+            logger.info("Persona turn %d/%d", turn, max_turns)
+
+            # Wait for agent to finish speaking
+            try:
+                agent_audio, duration_ms = await asyncio.wait_for(
+                    self._wait_for_agent_turn(call),
+                    timeout=self.step_timeout,
+                )
+            except asyncio.TimeoutError:
+                logger.warning("Persona turn %d timed out waiting for agent", turn)
+                break
+
+            if not agent_audio:
+                logger.info("Call ended (no agent audio)")
+                break
+
+            # Transcribe what the agent said (gives Claude real context)
+            agent_text = await transcribe_mulaw(agent_audio, settings.OPENAI_API_KEY)
+            if agent_text:
+                logger.info("Agent said: %s", agent_text[:100])
+                history.append({"role": "agent", "content": agent_text})
+            else:
+                logger.debug("Transcription unavailable for turn %d", turn)
+
+            # Generate persona response
+            try:
+                persona_text, should_end = await generate_response(
+                    persona=persona,
+                    history=history,
+                    openai_api_key=settings.OPENAI_API_KEY,
+                )
+            except Exception as exc:
+                logger.error("Persona response generation failed: %s", exc)
+                break
+
+            logger.info("Persona responds: %s%s", persona_text[:80],
+                        " [END]" if should_end else "")
+            history.append({"role": "persona", "content": persona_text})
+
+            # Convert to TTS and play
+            try:
+                pcm_audio = await self.audio_generator.generate_tts(persona_text)
+                mulaw_audio = self.audio_generator.convert_to_twilio(
+                    pcm_audio, source_sample_rate=24000
+                )
+                await self.receiver.send_audio(call, mulaw_audio)
+                self.turn_detector.mark_our_audio_sent(time.time())
+            except Exception as exc:
+                logger.warning("TTS/send failed for turn %d: %s", turn, exc)
+
+            steps.append(StepResult(
+                step_number=turn,
+                user_input_text=persona_text,
+                agent_response_text=agent_text,
+                agent_audio=agent_audio,
+                agent_audio_duration_ms=duration_ms,
+                latency_ms=self.turn_detector.get_latency(),
+            ))
+            self.turn_detector.reset()
+
+            if should_end:
+                logger.info("Persona ended the call at turn %d", turn)
+                break
+
+        return steps
 
     async def _run_step(
         self, step: TestStep, prepared_audio: PreparedAudio | None, call: ActiveCall

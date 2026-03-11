@@ -16,6 +16,8 @@ class ActiveCall:
     websocket: object  # WebSocket instance (typed loosely to avoid import dep)
     started_at: float
     audio_queue: asyncio.Queue = field(default_factory=asyncio.Queue)
+    inbound_buffer: bytearray = field(default_factory=bytearray)   # agent audio (mulaw 8kHz)
+    outbound_segments: list = field(default_factory=list)           # [(byte_offset, mulaw_bytes)]
 
 
 class CallReceiver(ABC):

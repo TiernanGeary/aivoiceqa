@@ -37,6 +37,8 @@ def build_runner(mock: bool = False):
         base_url=settings.RECO_API_URL,
         token=settings.RECO_API_TOKEN,
         mock=use_mock,
+        username=settings.RECO_API_USERNAME,
+        password=settings.RECO_API_PASSWORD,
     )
 
     # AudioGenerator
@@ -180,6 +182,48 @@ async def run_command(args: argparse.Namespace) -> int:
     return exit_code
 
 
+async def run_live_command(args: argparse.Namespace) -> int:
+    """Start the Twilio webhook server and run scenarios concurrently.
+
+    This is the real-call entrypoint: starts the FastAPI server in the
+    background, then runs the scenario(s).  The server stays up for the
+    duration so Twilio can connect.
+    """
+    import threading
+    import uvicorn
+    from config import settings
+    from server import app
+
+    if not settings.QA_PUBLIC_URL:
+        print(
+            "Error: QA_PUBLIC_URL is not set.\n"
+            "Set it to your public HTTPS hostname (e.g. ngrok URL) so Twilio\n"
+            "can reach the /incoming webhook and /media-stream WebSocket.",
+            file=sys.stderr,
+        )
+        return 1
+
+    print(f"Starting QA webhook server on port {settings.QA_SERVER_PORT}")
+    print(f"Twilio webhook URL: https://{settings.QA_PUBLIC_URL}/incoming")
+    print(f"WebSocket URL:      wss://{settings.QA_PUBLIC_URL}/media-stream\n")
+
+    # Run uvicorn in a background thread so the scenario can run in the main loop
+    server_config = uvicorn.Config(
+        app, host="0.0.0.0", port=settings.QA_SERVER_PORT, log_level="warning"
+    )
+    server = uvicorn.Server(server_config)
+    thread = threading.Thread(target=server.run, daemon=True)
+    thread.start()
+
+    # Brief pause to let the server start
+    await asyncio.sleep(1.0)
+
+    exit_code = await run_command(args)
+
+    server.should_exit = True
+    return exit_code
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="voiceaiqa - Voice Agent QA Tool",
@@ -189,8 +233,10 @@ def main() -> None:
 
     subparsers = parser.add_subparsers(dest="command")
 
-    # Run command
-    run_parser = subparsers.add_parser("run", help="Run test scenario(s)")
+    # Run command (mock mode or with pre-running server)
+    run_parser = subparsers.add_parser(
+        "run", help="Run test scenario(s) (mock or against already-running server)"
+    )
     run_parser.add_argument("--scenario", type=str,
                             help="Path to a scenario YAML file")
     run_parser.add_argument("--scenario-dir", type=str,
@@ -198,12 +244,43 @@ def main() -> None:
     run_parser.add_argument("--mock", action="store_true",
                             help="Use mock mode (no real calls or APIs)")
 
+    # run-live: start webhook server + run scenarios (real calls)
+    live_parser = subparsers.add_parser(
+        "run-live",
+        help="Start webhook server and run scenario(s) against real reco calls",
+    )
+    live_parser.add_argument("--scenario", type=str,
+                             help="Path to a scenario YAML file")
+    live_parser.add_argument("--scenario-dir", type=str,
+                             help="Directory containing scenario YAML files")
+
+    # serve: just start the webhook server (useful when running scenarios separately)
+    serve_parser = subparsers.add_parser(
+        "serve", help="Start the Twilio webhook server only (blocking)"
+    )
+    serve_parser.add_argument("--port", type=int, default=None,
+                              help="Override QA_SERVER_PORT")
+
     args = parser.parse_args()
     setup_logging(verbose=args.verbose)
 
     if args.command == "run":
         exit_code = asyncio.run(run_command(args))
         sys.exit(exit_code)
+    elif args.command == "run-live":
+        exit_code = asyncio.run(run_live_command(args))
+        sys.exit(exit_code)
+    elif args.command == "serve":
+        from server import start_server
+        from config import settings
+        port = args.port or settings.QA_SERVER_PORT
+        print(f"Starting QA webhook server on port {port}")
+        if settings.QA_PUBLIC_URL:
+            print(f"Twilio webhook URL: https://{settings.QA_PUBLIC_URL}/incoming")
+            print(f"WebSocket URL:      wss://{settings.QA_PUBLIC_URL}/media-stream")
+        else:
+            print("Warning: QA_PUBLIC_URL not set — configure Twilio manually")
+        start_server()
     else:
         parser.print_help()
         sys.exit(1)

@@ -116,6 +116,10 @@ class TwilioReceiver(CallReceiver):
         Audio is chunked to exactly 160 bytes per message. Chunks are sent
         at ~20ms intervals to avoid audio glitches.
         """
+        # Record outbound audio with its inbound byte-offset for mixing
+        if audio:
+            call.outbound_segments.append((len(call.inbound_buffer), audio))
+
         for i in range(0, len(audio), MULAW_FRAME_SIZE):
             chunk = audio[i : i + MULAW_FRAME_SIZE]
             payload = base64.b64encode(chunk).decode("ascii")
@@ -178,6 +182,7 @@ class TwilioReceiver(CallReceiver):
             payload = data.get("media", {}).get("payload", "")
             if payload:
                 audio_bytes = base64.b64decode(payload)
+                call.inbound_buffer.extend(audio_bytes)
                 await call.audio_queue.put(audio_bytes)
 
         elif event == "stop":

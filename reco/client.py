@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass
 
 import httpx
@@ -14,6 +15,8 @@ from reco.mock_data import (
     MOCK_RECORDING_URL,
     MOCK_TRANSCRIPT,
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -43,22 +46,74 @@ class RecoClient:
     """Async HTTP client for the reco REST API.
 
     When mock=True, returns realistic fake data without network access.
+
+    Auth: provide either ``token`` (static JWT) or ``username``+``password``
+    (auto-login via POST /api/signin).  If username/password are set they take
+    priority — the token is refreshed automatically on 401.
     """
 
-    def __init__(self, base_url: str, token: str, mock: bool = False) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        token: str = "",
+        mock: bool = False,
+        username: str = "",
+        password: str = "",
+    ) -> None:
         self.base_url = base_url.rstrip("/")
-        self.token = token
+        self._token = token
         self.mock = mock
+        self._username = username
+        self._password = password
         self._client: httpx.AsyncClient | None = None
 
+    # --- Auth helpers ---
+
+    async def _login(self) -> None:
+        """POST /api/signin to obtain a JWT and store it as _token."""
+        async with httpx.AsyncClient(base_url=self.base_url, timeout=15.0) as c:
+            resp = await c.post(
+                "/api/signin",
+                json={"username": self._username, "password": self._password},
+            )
+        if resp.status_code != 200:
+            raise RecoClientError(
+                f"Login failed: {resp.status_code} {resp.text}"
+            )
+        self._token = resp.json().get("access_token", "")
+        if not self._token:
+            raise RecoClientError("Login succeeded but access_token missing in response")
+        logger.info("RecoClient: JWT obtained via /api/signin")
+        # Reset the HTTP client so the new token is picked up
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
+        self._client = None
+
+    async def _ensure_token(self) -> None:
+        """Obtain JWT via login if no token is set and credentials are available."""
+        if not self._token and self._username and self._password:
+            await self._login()
+
     async def _get_client(self) -> httpx.AsyncClient:
+        await self._ensure_token()
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(
                 base_url=self.base_url,
-                headers={"Authorization": f"Bearer {self.token}"},
+                headers={"Authorization": f"Bearer {self._token}"},
                 timeout=30.0,
             )
         return self._client
+
+    async def _request(self, method: str, path: str, **kwargs) -> httpx.Response:
+        """Make an authenticated request, retrying once after re-login on 401."""
+        client = await self._get_client()
+        resp = await client.request(method, path, **kwargs)
+        if resp.status_code == 401 and self._username and self._password:
+            logger.info("RecoClient: 401 received, refreshing JWT")
+            await self._login()
+            client = await self._get_client()
+            resp = await client.request(method, path, **kwargs)
+        return resp
 
     async def close(self) -> None:
         """Close the underlying HTTP client."""
@@ -71,13 +126,15 @@ class RecoClient:
     async def start_call(
         self,
         phone: str,
-        customer_id: str,
         flow_path: str,
+        customer_id: str | None = None,
         metadata: dict | None = None,
     ) -> CallStartResult:
         """POST /api/calls/start -- trigger an outbound call.
 
         Returns call_id and conversation_id. Tags QA calls via metadata.
+        customer_id is optional; if provided it must be a numeric string
+        matching a customer in the reco database.
         """
         if self.mock:
             return CallStartResult(
@@ -85,24 +142,23 @@ class RecoClient:
                 conversation_id=MOCK_CONVERSATION_ID,
             )
 
-        client = await self._get_client()
-        body: dict = {
-            "phone": phone,
-            "customer_id": customer_id,
-            "flow_path": flow_path,
-        }
+        body: dict = {"phone": phone, "flow_path": flow_path}
+        # Only include customer_id if it looks like a DB integer ID
+        if customer_id and customer_id.isdigit():
+            body["customer_id"] = customer_id
         if metadata:
             body["metadata"] = metadata
 
-        resp = await client.post("/api/calls/start", json=body)
+        resp = await self._request("POST", "/api/calls/start", json=body)
         if resp.status_code != 200:
             raise RecoClientError(
                 f"start_call failed: {resp.status_code} {resp.text}"
             )
         data = resp.json()
+        logger.info("start_call response: %s", data)
         return CallStartResult(
             call_id=data["call_id"],
-            conversation_id=data["conversation_id"],
+            conversation_id=data.get("conversation_id") or data.get("id"),
         )
 
     async def poll_status(
@@ -120,10 +176,9 @@ class RecoClient:
             await asyncio.sleep(0.01)
             return "completed"
 
-        client = await self._get_client()
         elapsed = 0.0
         while elapsed < timeout:
-            resp = await client.get("/api/calls/status", params={"call_id": call_id})
+            resp = await self._request("GET", "/api/calls/status", params={"call_id": call_id})
             if resp.status_code != 200:
                 raise RecoClientError(
                     f"poll_status failed: {resp.status_code} {resp.text}"
@@ -152,8 +207,7 @@ class RecoClient:
                 created_at=d["created_at"],
             )
 
-        client = await self._get_client()
-        resp = await client.get(f"/conversations/{conversation_id}")
+        resp = await self._request("GET", f"/api/conversations/{conversation_id}")
         if resp.status_code != 200:
             raise RecoClientError(
                 f"get_conversation failed: {resp.status_code} {resp.text}"
@@ -163,10 +217,10 @@ class RecoClient:
             id=data["id"],
             call_status=data["call_status"],
             duration_seconds=data["duration_seconds"],
-            phone_number=data["phone_number"],
-            flow_path=data["flow_path"],
-            customer_id=data["customer_id"],
-            created_at=data["created_at"],
+            phone_number=data["customer_phone"],
+            flow_path=data.get("flow_path", ""),
+            customer_id=data.get("customer_id", ""),
+            created_at=str(data.get("call_start_at", "")),
         )
 
     async def get_transcript(self, conversation_id: int) -> str:
@@ -174,8 +228,7 @@ class RecoClient:
         if self.mock:
             return MOCK_TRANSCRIPT
 
-        client = await self._get_client()
-        resp = await client.get(f"/conversations/{conversation_id}/transcript")
+        resp = await self._request("GET", f"/api/conversations/{conversation_id}/transcript")
         if resp.status_code != 200:
             raise RecoClientError(
                 f"get_transcript failed: {resp.status_code} {resp.text}"
@@ -187,8 +240,7 @@ class RecoClient:
         if self.mock:
             return MOCK_RECORDING_URL
 
-        client = await self._get_client()
-        resp = await client.get(f"/recordings/{conversation_id}/audio")
+        resp = await self._request("GET", f"/api/recordings/{conversation_id}/audio")
         if resp.status_code != 200:
             raise RecoClientError(
                 f"get_recording_url failed: {resp.status_code} {resp.text}"

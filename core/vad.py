@@ -69,16 +69,44 @@ class TurnDetector:
 
     @staticmethod
     def _load_vad_model() -> object:
-        """Load silero-vad model via torch.hub."""
-        import torch  # type: ignore[import-not-found]
+        """Load silero-vad model via torch.hub, falling back to energy-based VAD."""
+        try:
+            import torch  # type: ignore[import-not-found]
 
-        model, _utils = torch.hub.load(
-            repo_or_dir="snakers4/silero-vad",
-            model="silero_vad",
-            force_reload=False,
-            onnx=False,
-        )
-        return model
+            model, _utils = torch.hub.load(
+                repo_or_dir="snakers4/silero-vad",
+                model="silero_vad",
+                force_reload=False,
+                onnx=False,
+            )
+            return model
+        except (ImportError, Exception):
+            import logging
+            logging.getLogger(__name__).warning(
+                "torch/silero-vad not available — using energy-based VAD fallback"
+            )
+            return TurnDetector._energy_vad_model()
+
+    @staticmethod
+    def _energy_vad_model():
+        """Simple RMS-energy VAD model — no torch required."""
+        def vad_fn(samples, sample_rate):
+            try:
+                import torch
+                if isinstance(samples, torch.Tensor):
+                    if samples.numel() == 0:
+                        return 0.0
+                    return 0.9 if samples.pow(2).mean().sqrt().item() > 0.015 else 0.1
+            except ImportError:
+                pass
+            if not samples:
+                return 0.0
+            if isinstance(samples, (list, tuple)):
+                rms = (sum(s * s for s in samples) / len(samples)) ** 0.5
+            else:
+                rms = 0.0
+            return 0.9 if rms > 500 else 0.1
+        return vad_fn
 
     @property
     def state(self) -> TurnState:
