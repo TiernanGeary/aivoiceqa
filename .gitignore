@@ -8,3 +8,4 @@ reports/*.json
 dist/
 build/
 .pytest_cache/
+.claude/worktrees/
